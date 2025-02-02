@@ -1,0 +1,6 @@
+name: StrideMC-Bot
+version: '1.0-SNAPSHOT'
+main: Paqlio.me.BOT
+api-version: '1.21'
+load: STARTUP
+authors: [ Paqlio ]
