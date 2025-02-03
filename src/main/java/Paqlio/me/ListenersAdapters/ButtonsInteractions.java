@@ -18,8 +18,6 @@ public class ButtonsInteractions extends ListenerAdapter {
 
     @Override
     public void onButtonInteraction(@NotNull ButtonInteractionEvent event) {
-        var channel = event.getChannel();
-
         switch (event.getComponentId()) {
             case "off" -> event.replyEmbeds(createEmbed(
                             "Potwierdzenie usunięcia",
@@ -32,6 +30,15 @@ public class ButtonsInteractions extends ListenerAdapter {
                 event.reply("Ticket zostanie usunięty za **10** sekund!").queue(response -> {
                     response.retrieveOriginal().queue(message -> startCountdown(message, (TextChannel) event.getChannel()));
                 });
+            }
+            case "accept" -> {
+                var guild = event.getGuild();
+                var member = event.getMember();
+                var rang = guild.getRoleById("1336036742213537842");
+                if (rang == null) return;
+                event.reply("Zaakceptowałeś regulamin!").setEphemeral(true).queue();
+                assert member != null;
+                guild.addRoleToMember(member.getUser(), rang).queue();
             }
         }
     }
