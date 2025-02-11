@@ -92,7 +92,7 @@ public class Ticket extends ListenerAdapter {
         var body = Objects.requireNonNull(event.getValue("body")).getAsString();
 
         category.createTextChannel("ticket〢" + user.getName())
-                .addMemberPermissionOverride(user.getIdLong(), EnumSet.of(Permission.VIEW_CHANNEL), null)
+                .addMemberPermissionOverride(user.getIdLong(), EnumSet.of(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND), null)
                 .addPermissionOverride(guild.getPublicRole(), null, EnumSet.of(Permission.VIEW_CHANNEL))
                 .queue(textChannel -> {
                     var eb = new EmbedBuilder()
