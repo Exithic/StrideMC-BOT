@@ -23,7 +23,7 @@ public class User extends ListenerAdapter {
         assert server != null;
         var eb = new EmbedBuilder()
                 .setColor(new Color(0x2F3136))
-                .setAuthor("⚠️ Informacje o użytkowniku", null, user.getEffectiveAvatarUrl())
+                .setAuthor("`⚠️` Informacje o użytkowniku", null, user.getEffectiveAvatarUrl())
                 .addField("● Nick Użytkownika", user.getAsMention(), true)
                 .addField("● ID Konta", user.getId(), true)
                 .addField("● Czy jest Botem?", (user.getUser().isBot() ? "✅ Tak" : "❌ Nie"), false)

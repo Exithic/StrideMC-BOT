@@ -29,7 +29,7 @@ public class MemberJoin extends ListenerAdapter {
                     .setColor(Constants.defaultcolor)
                     .setThumbnail(member.getEffectiveAvatarUrl())
                     .setDescription("> ✨ Witaj " + member.getAsMention() + " na serwerze \n"
-                            + "> Regulamin znajdziesz tutaj 👋 <#1329959666293280799> \n "
+                            + "> Regulamin znajdziesz tutaj 👋 <#1384254060575854602> \n "
                             + "> Jesteś ``" + guild.getMemberCount() + "`` użytkownikiem na naszym discordzie!")
                     .setTimestamp(member.getTimeJoined())
                     .setFooter(guild.getName(), guild.getIconUrl())
