@@ -49,7 +49,7 @@ public class ButtonsInteractions extends ListenerAdapter {
             @Override
             public void run() {
                 if (secondsLeft > 0) {
-                    message.editMessage("Ticket zostanie usunięty za **" + secondsLeft + "** sekund!").queue(null, error -> {});
+                    message.editMessage("Ticket zostanie usunięty za `⌚`**" + secondsLeft + "** sekund!").queue(null, error -> {});
                     secondsLeft--;
                 } else {
                     message.delete().queue(null, error -> {}); // Ignoruje błąd, jeśli wiadomość już nie istnieje

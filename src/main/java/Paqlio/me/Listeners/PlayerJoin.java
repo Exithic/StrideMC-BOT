@@ -11,7 +11,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import java.awt.*;
 
 /**
- * @author Paqlio
+ * @author RocketLunchi
  * @since 03.02.2025- 19:51
  **/
 

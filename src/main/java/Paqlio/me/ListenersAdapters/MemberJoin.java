@@ -13,16 +13,16 @@ public class MemberJoin extends ListenerAdapter {
         var member = event.getMember();
         var guild = event.getGuild();
 
-        var channelmembers = guild.getVoiceChannelById("1335722748365766727");
+        var channelmembers = guild.getVoiceChannelById("1387897312092880966");
         if (channelmembers != null) {
             channelmembers.getManager()
                     .setName("⚡ ┊ Ilość osób: " + guild.getMemberCount())
                     .queue();
         } else {
-            System.err.println("Nie znaleziono kanału głosowego o ID: 1335722748365766727");
+            System.err.println("Nie znaleziono kanału głosowego o ID: 1387897312092880966");
         }
 
-        var channel = guild.getTextChannelById("1335722642472304680");
+        var channel = guild.getTextChannelById("1383916471645638818");
         if (channel != null) {
             var eb = new EmbedBuilder()
                     .setTitle("👋 〢 NOWY UŻYTKOWNIK")
@@ -39,7 +39,7 @@ public class MemberJoin extends ListenerAdapter {
                     .addActionRow(Button.link(Constants.link, "🌐〢Strona"))
                     .queue();
         } else {
-            System.err.println("Nie znaleziono kanału tekstowego o ID: 1335722642472304680");
+            System.err.println("Nie znaleziono kanału tekstowego o ID: 1383916471645638818");
         }
 
         System.out.println("New member joined: " + member.getUser().getAsTag());

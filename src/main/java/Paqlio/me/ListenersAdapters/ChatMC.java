@@ -4,11 +4,8 @@ import Paqlio.me.Configurations.Constants;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 
-/**
- * @author Paqlio
- * @since 03.02.2025- 20:19
- **/
 public class ChatMC extends ListenerAdapter {
     @Override
     public void onMessageReceived(MessageReceivedEvent event) {
@@ -16,8 +13,11 @@ public class ChatMC extends ListenerAdapter {
         if (event.getChannel().getId().equals(Constants.MinecraftChannel)) {
             var message = event.getMessage();
             var author = event.getAuthor();
-            //minecraft chat
-            Bukkit.broadcastMessage("§7[§bDiscord§7] §f" + author.getName() + "§7: §f" + message.getContentDisplay());
+            Bukkit.getOnlinePlayers().forEach(player -> {
+                if (!player.isConversing()) { // Sprawdza, czy gracz nie jest w trybie wpisywania wartości dla innego pluginu
+                    player.sendMessage("§7[§bDiscord§7] §f" + author.getName() + "§7: §f" + message.getContentDisplay());
+                }
+            });
         }
     }
 }
