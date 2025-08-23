@@ -6,8 +6,10 @@ import Paqlio.me.Listeners.PlayerQuit;
 import Paqlio.me.ListenersAdapters.*; // Import all your ListenerAdapters
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.requests.GatewayIntent;
@@ -22,6 +24,8 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+
+import static net.dv8tion.jda.api.Permission.MESSAGE_MANAGE;
 
 public final class BOT extends JavaPlugin {
     private static JDA jda;
@@ -49,10 +53,11 @@ public final class BOT extends JavaPlugin {
                     .addCommands(Commands.slash("ticket", "Tworzy ticket"))
                     .addCommands(Commands.slash("regulamin", "Wyświetla regulamin"))
                     .addCommands(Commands.slash("user", "Wyświetla informacje o użytkowniku").addOption(OptionType.USER, "użytkownik", "Użytkownik", true))
+                    .addCommands(Commands.slash("clear", "Czyści wiadomości").addOption(OptionType.INTEGER, "ilość", "Ilość wiadomości do usunięcia", true).setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.MESSAGE_MANAGE)))
                     .queue();
 
             var pm = Bukkit.getPluginManager();
-            jda.addEventListener(new Ticket(), new MemberJoin(), new Regulamin(), new ChatMC(), new User(), new Server());
+            jda.addEventListener(new Ticket(), new MemberJoin(), new Regulamin(), new ChatMC(), new User(), new Server(),new Clear());
             pm.registerEvents(new Chat(), this);
             pm.registerEvents(new PlayerJoin(), this);
             pm.registerEvents(new PlayerQuit(), this);

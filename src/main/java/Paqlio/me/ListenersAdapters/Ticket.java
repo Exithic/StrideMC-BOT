@@ -14,7 +14,6 @@ import net.dv8tion.jda.api.interactions.components.text.TextInputStyle;
 import net.dv8tion.jda.api.interactions.modals.Modal;
 
 import java.awt.*;
-import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.Objects;
 

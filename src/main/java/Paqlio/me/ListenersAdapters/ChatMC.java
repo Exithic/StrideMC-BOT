@@ -14,8 +14,8 @@ public class ChatMC extends ListenerAdapter {
             var message = event.getMessage();
             var author = event.getAuthor();
             Bukkit.getOnlinePlayers().forEach(player -> {
-                if (!player.isConversing()) { // Sprawdza, czy gracz nie jest w trybie wpisywania wartości dla innego pluginu
-                    player.sendMessage("§7[§bDiscord§7] §f" + author.getName() + "§7: §f" + message.getContentDisplay());
+                if (!player.isConversing()) {
+                    player.sendMessage("§7(§bDiscord§7) §f" + author.getName() + "§7: §f" + message.getContentDisplay());
                 }
             });
         }
