@@ -18,10 +18,7 @@ public class MemberJoin extends ListenerAdapter {
             channelmembers.getManager()
                     .setName("⚡ ┊ Ilość osób: " + guild.getMemberCount())
                     .queue();
-        } else {
-            System.err.println("Nie znaleziono kanału głosowego o ID: 1387897312092880966");
         }
-
         var channel = guild.getTextChannelById("1383916471645638818");
         if (channel != null) {
             var eb = new EmbedBuilder()
@@ -38,10 +35,6 @@ public class MemberJoin extends ListenerAdapter {
             channel.sendMessageEmbeds(eb)
                     .addActionRow(Button.link(Constants.link, "🌐〢Strona"))
                     .queue();
-        } else {
-            System.err.println("Nie znaleziono kanału tekstowego o ID: 1383916471645638818");
         }
-
-        System.out.println("New member joined: " + member.getUser().getAsTag());
     }
 }

@@ -91,47 +91,55 @@ public class Ticket extends ListenerAdapter {
         var subject = Objects.requireNonNull(event.getValue("subject")).getAsString();
         var body = Objects.requireNonNull(event.getValue("body")).getAsString();
 
-        category.createTextChannel("ticket〢" + user.getName())
-                .addMemberPermissionOverride(user.getIdLong(), EnumSet.of(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND), null)
-                .addPermissionOverride(guild.getPublicRole(), null, EnumSet.of(Permission.VIEW_CHANNEL))
-                .queue(textChannel -> {
-                    var formatDate = new java.text.SimpleDateFormat("HH:mm dd/MM/yyyy");
-                    var date = java.util.Date.from(event.getTimeCreated().toInstant());
-                    formatDate.setTimeZone(java.util.TimeZone.getTimeZone("Europe/Warsaw"));
-                    var eb = new EmbedBuilder()
-                            .setColor(Constants.defaultcolor)
-                            .setAuthor(Constants.name, Constants.link, guild.getIconUrl())
-                            .setDescription("> ### `📨`〢TICKET \n " +
-                                    "> \n" +
-                                    "> `👤` ***Użytkownik:*** " + user.getAsMention() + "\n" +
-                                    "> `🕒` ***Data: ***" + formatDate.format(date)  + "\n" +
-                                    "> `📋`*** Temat: ***```" + subject + "```\n" +
-                                    "> `📨`*** Treść:***\n > ```" + body + "```\n" )
-                            .setThumbnail(guild.getIconUrl())
-                            .setImage(Constants.img)
-                            .setTimestamp(event.getTimeCreated())
-                            .setFooter(guild.getName(), guild.getIconUrl());
-                    var support = guild.getRoleById("1388111975657111642"); // ID roli wsparcia, zmień na odpowiednią rolę
-                    textChannel.sendMessage(user.getAsMention())// Ping użytkownika
-                            .addEmbeds(eb.build())
-                            .addActionRow(
-                                    Button.danger("off", "❌〢Usuń Ticket"),
-                                    Button.link(Constants.link, "🌐〢Strona"))
-                            .queue(message -> {
-                                if (support != null) {
-                                    textChannel.sendMessage("`📨` " + support.getAsMention()).queue();
-                                }
-                            });
+        // KLUCZOWA ZMIANA: Najpierw acknowledge (deferReply)
+        event.deferReply(true).queue(hook -> {
+            // Teraz możemy robić długie operacje
+            category.createTextChannel("ticket〢" + user.getName())
+                    .addMemberPermissionOverride(user.getIdLong(), EnumSet.of(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND), null)
+                    .addPermissionOverride(guild.getPublicRole(), null, EnumSet.of(Permission.VIEW_CHANNEL))
+                    .queue(textChannel -> {
+                        var formatDate = new java.text.SimpleDateFormat("HH:mm dd/MM/yyyy");
+                        var date = java.util.Date.from(event.getTimeCreated().toInstant());
+                        formatDate.setTimeZone(java.util.TimeZone.getTimeZone("Europe/Warsaw"));
+                        var eb = new EmbedBuilder()
+                                .setColor(Constants.defaultcolor)
+                                .setAuthor(Constants.name, Constants.link, guild.getIconUrl())
+                                .setDescription("> ### `📨`〢TICKET \n " +
+                                        "> \n" +
+                                        "> `👤` ***Użytkownik:*** " + user.getAsMention() + "\n" +
+                                        "> `🕒` ***Data: ***" + formatDate.format(date)  + "\n" +
+                                        "> `📋`*** Temat: ***```" + subject + "```\n" +
+                                        "> `📨`*** Treść:***\n > ```" + body + "```\n" )
+                                .setThumbnail(guild.getIconUrl())
+                                .setImage(Constants.img)
+                                .setTimestamp(event.getTimeCreated())
+                                .setFooter(guild.getName(), guild.getIconUrl());
+                        var support = guild.getRoleById("1388111975657111642");
+                        textChannel.sendMessage(user.getAsMention())
+                                .addEmbeds(eb.build())
+                                .addActionRow(
+                                        Button.danger("off", "❌〢Usuń Ticket"),
+                                        Button.link(Constants.link, "🌐〢Strona"))
+                                .queue(message -> {
+                                    if (support != null) {
+                                        textChannel.sendMessage("`📨` " + support.getAsMention()).queue();
+                                    }
+                                });
 
-                    event.replyEmbeds(
-                            new EmbedBuilder()
-                                    .setColor(Color.GREEN)
-                                    .setTitle("📨 Ticket utworzony!")
-                                    .setDescription("Twój kanał ticketa został utworzony: " + textChannel.getAsMention())
-                                    .build()
-                    ).addActionRow(
-                            Button.link("https://discord.com/channels/" + guild.getId() + "/" + textChannel.getId(), "📂 Przejdź do ticketa")
-                    ).setEphemeral(true).queue();
-                });
+                        // ZMIANA: Używamy hook.editOriginal zamiast event.replyEmbeds
+                        hook.editOriginalEmbeds(
+                                new EmbedBuilder()
+                                        .setColor(Color.GREEN)
+                                        .setTitle("📨 Ticket utworzony!")
+                                        .setDescription("Twój kanał ticketa został utworzony: " + textChannel.getAsMention())
+                                        .build()
+                        ).setActionRow(
+                                Button.link("https://discord.com/channels/" + guild.getId() + "/" + textChannel.getId(), "📂 Przejdź do ticketa")
+                        ).queue();
+                    }, error -> {
+                        // Obsługa błędu tworzenia kanału
+                        hook.editOriginal("❌ Wystąpił błąd podczas tworzenia ticketu: " + error.getMessage()).queue();
+                    });
+        });
     }
 }
