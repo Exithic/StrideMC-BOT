@@ -1,103 +1,96 @@
 package Paqlio.me.ListenersAdapters;
 
+import Paqlio.me.BOT;
+import Paqlio.me.Configurations.Constants;
+import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.Permission;
-import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
-import net.dv8tion.jda.api.exceptions.InsufficientPermissionException;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
-import net.dv8tion.jda.api.interactions.commands.OptionMapping;
+import org.jetbrains.annotations.NotNull;
 
 import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
 public class Clear extends ListenerAdapter {
 
-    private static final Logger LOGGER = Logger.getLogger("ClearCommand");
-
-
     @Override
-    public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
-        if (!event.getName().equals("clear")) {
+    public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
+        if (!event.getName().equals("clear")) return;
+
+        var guild = event.getGuild();
+        var member = event.getMember();
+        var channel = event.getGuildChannel();
+
+        if (guild == null || member == null) return;
+
+        // 1. Wstępna weryfikacja uprawnień
+        if (!member.hasPermission(Permission.MESSAGE_MANAGE)) {
+            event.reply("> `❌` Nie masz uprawnień do zarządzania wiadomościami!").setEphemeral(true).queue();
             return;
         }
 
+        if (!guild.getSelfMember().hasPermission(channel, Permission.MESSAGE_MANAGE)) {
+            event.reply("> `❌` Bot nie posiada uprawnień `MESSAGE_MANAGE` na tym kanale!").setEphemeral(true).queue();
+            return;
+        }
+
+        var amountOption = event.getOption("ilość");
+        if (amountOption == null) return;
+
+        int amount = amountOption.getAsInt();
+        if (amount < 1 || amount > 100) {
+            event.reply("> `⚠️` Ilość wiadomości musi mieścić się w przedziale **1 - 100**.").setEphemeral(true).queue();
+            return;
+        }
+
+        // Odpowiadamy efemerycznie, aby nie śmiecić na czacie
         event.deferReply(true).queue();
 
-        if (event.getChannelType() != ChannelType.TEXT) {
-            event.getHook().sendMessage("Komenda `clear` może być używana tylko na kanałach tekstowych.").queue();
-            return;
-        }
+        event.getChannel().getHistory().retrievePast(amount).queue(messages -> {
+            var twoWeeksAgo = OffsetDateTime.now().minusDays(14);
 
-        if (!Objects.requireNonNull(event.getGuild()).getSelfMember().hasPermission(event.getGuildChannel(), Permission.MESSAGE_MANAGE)) {
-            event.getHook().sendMessage("Bot nie ma uprawnień do zarządzania wiadomościami w tym kanale!").queue();
-            LOGGER.warning("Bot nie ma uprawnień MESSAGE_MANAGE w kanale " + event.getGuildChannel().getName() + " do wykonania komendy clear.");
-            return;
-        }
-        if (!Objects.requireNonNull(event.getMember()).hasPermission(Permission.MESSAGE_MANAGE)) {
-            event.getHook().sendMessage("Nie masz uprawnień do zarządzania wiadomościami!").queue();
-            LOGGER.warning("Użytkownik " + event.getUser().getAsTag() + " próbował użyć komendy clear bez uprawnień MESSAGE_MANAGE.");
-            return;
-        }
+            // Filtrowanie wiadomości (Discord nie pozwala usuwać grupowo starszych niż 14 dni)
+            var deletableMessages = messages.stream()
+                    .filter(m -> m.getTimeCreated().isAfter(twoWeeksAgo))
+                    .toList();
 
-        OptionMapping amountOption = event.getOption("ilość");
-        if (amountOption == null) {
-            event.getHook().sendMessage("Musisz podać ilość wiadomości do usunięcia!").queue();
-            return;
-        }
+            if (deletableMessages.isEmpty()) {
+                event.getHook().sendMessage("> `❌` Nie znaleziono wiadomości młodszych niż 14 dni.").queue();
+                return;
+            }
 
-        int amount = (int) amountOption.getAsLong();
+            // 2. Usuwanie wiadomości
+            channel.deleteMessages(deletableMessages).queue(success -> {
+                var deletedCount = deletableMessages.size();
 
-        if (amount < 1 || amount > 100) {
-            event.getHook().sendMessage("Ilość wiadomości do usunięcia musi być w zakresie od 1 do 100.").queue();
-            return;
-        }
+                // Informacja dla użytkownika
+                event.getHook().sendMessage("`✅` Pomyślnie usunięto **" + deletedCount + "** wiadomości.")
+                        .delay(5, TimeUnit.SECONDS)
+                        .flatMap(m -> m.delete()) // Automatyczne usuwanie potwierdzenia
+                        .queue();
 
-        event.getChannel().getHistory().retrievePast(amount).queue(
-                messages -> {
-                    List<Message> deletableMessages = messages.stream()
-                            .filter(m -> m.getTimeCreated().isAfter(OffsetDateTime.now().minusDays(14)))
-                            .toList();
+                // 3. Logowanie do kanału logów (opcjonalne, ale bardzo przydatne)
+                sendLog(event, deletedCount);
 
-                    int deletedCount = deletableMessages.size();
-                    int skippedCount = amount - deletedCount;
+            }, error -> event.getHook().sendMessage("> `❌` Błąd podczas usuwania: " + error.getMessage()).queue());
+        });
+    }
 
-                    if (deletableMessages.isEmpty()) {
-                        event.getHook().sendMessage("Nie znaleziono wiadomości do usunięcia (lub wszystkie są starsze niż 14 dni).").queue();
-                        return;
-                    }
+    private void sendLog(SlashCommandInteractionEvent event, int count) {
+        // Pobieramy kanał logów z Twoich stałych (ID z ticketów)
+        var logChannel = event.getGuild().getTextChannelById("1388505635251028070");
+        if (logChannel == null) return;
 
-                    event.getGuildChannel().deleteMessages(deletableMessages).queue(
-                            success -> {
-                                String responseMessage = "`✅` Pomyślnie usunięto **" + deletedCount + "** wiadomość(i)!";
-                                if (skippedCount > 0) {
-                                    responseMessage += " (Pominięto **" + skippedCount + "** wiadomości starszych niż 14 dni).";
-                                }
+        var logEmbed = new EmbedBuilder()
+                .setTitle("`🧹`〢 Czyszczenie czatu")
+                .setColor(Constants.defaultcolor)
+                .addField("> Wykonawca:", event.getUser().getAsMention(), true)
+                .addField("> Kanał:", event.getGuildChannel().getAsMention(), true)
+                .addField("> Ilość:", "```" + count + " wiadomości```", false)
+                .setTimestamp(OffsetDateTime.now())
+                .setFooter(event.getGuild().getName(), event.getGuild().getIconUrl());
 
-                                event.getHook().sendMessage(responseMessage).queue(
-                                        msg -> msg.delete().queueAfter(5, TimeUnit.SECONDS),
-                                        error -> LOGGER.severe("Nie udało się wysłać efemerycznej odpowiedzi o usunięciu wiadomości: " + error.getMessage())
-                                );
-
-                                LOGGER.info("Użytkownik " + event.getUser().getAsTag() + " usunął " + deletedCount + " wiadomości w kanale #" + event.getGuildChannel().getName());
-                            },
-                            failure -> {
-                                if (failure instanceof InsufficientPermissionException) {
-                                    event.getHook().sendMessage("Bot nie ma uprawnień do usuwania wiadomości w tym kanale!").queue();
-                                } else {
-                                    event.getHook().sendMessage("Wystąpił błąd podczas usuwania wiadomości: " + failure.getMessage()).queue();
-                                }
-                                LOGGER.severe("Błąd podczas usuwania wiadomości przez " + event.getUser().getAsTag() + " w kanale " + event.getGuildChannel().getName() + ": " + failure.getMessage());
-                            }
-                    );
-                },
-                failure -> {
-                    event.getHook().sendMessage("Wystąpił błąd podczas pobierania historii wiadomości: " + failure.getMessage()).queue();
-                    LOGGER.severe("Błąd podczas pobierania historii wiadomości dla komendy clear: " + failure.getMessage());
-                }
-        );
+        logChannel.sendMessageEmbeds(logEmbed.build()).queue();
     }
 }
