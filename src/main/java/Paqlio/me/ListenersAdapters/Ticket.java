@@ -3,8 +3,6 @@ package Paqlio.me.ListenersAdapters;
 import Paqlio.me.Configurations.Constants;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.Permission;
-import net.dv8tion.jda.api.entities.Role;
-import net.dv8tion.jda.api.entities.channel.concrete.Category;
 import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
@@ -23,6 +21,7 @@ import java.util.Objects;
 
 public class Ticket extends ListenerAdapter {
 
+    // Rekomendacja: Warto to przenieść do Configu Bukkita w wolnej chwili!
     private static final String CATEGORY_ID = "1388106421656096768";
     private static final String SUPPORT_ROLE_ID = "1388111975657111642";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
@@ -34,11 +33,17 @@ public class Ticket extends ListenerAdapter {
         var guild = event.getGuild();
         if (guild == null) return;
 
+        // Ograniczenie - tylko admin powinien móc wysłać ten panel
+        if (!event.getMember().hasPermission(Permission.ADMINISTRATOR)) {
+            event.reply("> `❌` Brak uprawnień do postawienia panelu.").setEphemeral(true).queue();
+            return;
+        }
+
         var eb = new EmbedBuilder()
-                .setColor(Constants.defaultcolor)
-                .setAuthor("📨 StrideMC - Ticket System", Constants.link, guild.getIconUrl())
+                .setColor(Constants.DEFAULT_COLOR)
+                .setAuthor("📨 StrideMC - Ticket System", Constants.LINK, guild.getIconUrl())
                 .setThumbnail(guild.getIconUrl())
-                .setImage(Constants.img)
+                .setImage(Constants.IMG)
                 .setDescription("""
                         ## `⚡`〢 CENTRUM POMOCY
                         
@@ -50,7 +55,7 @@ public class Ticket extends ListenerAdapter {
                         > • Cierpliwie czekaj na odpowiedź administracji.
                         """);
 
-        event.reply("> Pomyślnie wysłano wiadomość systemową.").setEphemeral(true).queue();
+        event.reply("> `✅` Pomyślnie postawiono panel zgłoszeń.").setEphemeral(true).queue();
         event.getChannel().sendMessageEmbeds(eb.build())
                 .addActionRow(Button.secondary("ticket", "📨〢Otwórz zgłoszenie"))
                 .queue();
@@ -65,28 +70,31 @@ public class Ticket extends ListenerAdapter {
         if (guild == null) return;
 
         var category = guild.getCategoryById(CATEGORY_ID);
-        if (category == null) return;
+        if (category == null) {
+            event.reply("> `❌` Błąd techniczny: Kategoria ticketów nie istnieje.").setEphemeral(true).queue();
+            return;
+        }
 
-        // Sprawdzanie czy użytkownik ma już otwarty kanał
+        // POPRAWKA: Niezawodne sprawdzanie limitu ticketów po ID zapisanym w temacie kanału
         var exists = category.getTextChannels().stream()
-                .anyMatch(tc -> tc.getName().contains(user.getName().toLowerCase()));
+                .anyMatch(tc -> tc.getTopic() != null && tc.getTopic().contains(user.getId()));
 
         if (exists) {
-            event.reply("> `⚠️` **Posiadasz już otwarte zgłoszenie!**")
+            event.reply("> `⚠️` **Posiadasz już otwarte zgłoszenie!** Zamknij poprzednie, aby otworzyć nowe.")
                     .setEphemeral(true).queue();
             return;
         }
 
         var subject = TextInput.create("subject", "Temat zgłoszenia:", TextInputStyle.SHORT)
-                .setPlaceholder("np. Błąd na Survival, Skarga, Inne")
+                .setPlaceholder("np. Błąd na serwerze, Skarga, Donacja")
                 .setMinLength(4)
-                .setMaxLength(30)
+                .setMaxLength(50)
                 .build();
 
         var body = TextInput.create("body", "Opisz swój problem:", TextInputStyle.PARAGRAPH)
-                .setPlaceholder("W czym możemy Ci pomóc? Opisz sytuację dokładnie.")
+                .setPlaceholder("W czym możemy Ci pomóc? Bądź konkretny.")
                 .setMinLength(10)
-                .setMaxLength(500)
+                .setMaxLength(1000) // Warto dać więcej niż 500, niektórzy piszą wypracowania!
                 .build();
 
         var modal = Modal.create("ticket_modal", "Zgłoszenie - StrideMC")
@@ -110,21 +118,31 @@ public class Ticket extends ListenerAdapter {
 
         event.deferReply(true).queue(hook -> {
             if (category == null) {
-                hook.editOriginal("❌ Błąd: Nie znaleziono kategorii zgłoszeń.").queue();
+                hook.editOriginal("> `❌` Błąd: Nie znaleziono kategorii zgłoszeń.").queue();
                 return;
             }
 
-            category.createTextChannel("ticket〢" + user.getName())
-                    .setTopic("Opened by: " + user.getId()) // Ważne dla archiwizacji logów!
-                    .addMemberPermissionOverride(user.getIdLong(), EnumSet.of(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND), null)
+            // POPRAWKA: Czyszczenie nicku z niedozwolonych znaków Discorda (spacje, emoji)
+            var safeName = user.getName().replaceAll("[^a-zA-Z0-9_-]", "").toLowerCase();
+            if (safeName.isBlank()) safeName = user.getId();
+
+            // Tworzenie kanału z poprawnymi uprawnieniami (dodano dodawanie plików i linków)
+            category.createTextChannel("ticket〢" + safeName)
+                    .setTopic("Opened by: " + user.getId()) // GWARANTUJE POPRAWNE ZNALEZIENIE TICKETU
+                    .addMemberPermissionOverride(user.getIdLong(),
+                            EnumSet.of(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND, Permission.MESSAGE_ATTACH_FILES, Permission.MESSAGE_EXT_EMOJI),
+                            null)
+                    .addRolePermissionOverride(Long.parseLong(SUPPORT_ROLE_ID),
+                            EnumSet.of(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND),
+                            null)
                     .addPermissionOverride(guild.getPublicRole(), null, EnumSet.of(Permission.VIEW_CHANNEL))
                     .queue(channel -> {
 
                         var ticketEmbed = new EmbedBuilder()
-                                .setColor(Constants.defaultcolor)
-                                .setAuthor(Constants.name + " - Zgłoszenie", Constants.link, guild.getIconUrl())
+                                .setColor(Constants.DEFAULT_COLOR)
+                                .setAuthor(Constants.NAME + " - Zgłoszenie", Constants.LINK, guild.getIconUrl())
                                 .setThumbnail(guild.getIconUrl())
-                                .setImage(Constants.img)
+                                .setImage(Constants.IMG)
                                 .setTimestamp(event.getTimeCreated())
                                 .setDescription("""
                                         ### `📨`〢 INFORMACJE O ZGŁOSZENIU
@@ -134,29 +152,28 @@ public class Ticket extends ListenerAdapter {
                                         
                                         `📋` **Temat:**
                                         ```%s```
-                                        `📨` **Treść:**
+                                        `💬` **Treść:**
                                         ```%s```
                                         """.formatted(user.getAsMention(), event.getTimeCreated().format(DATE_FORMATTER), subject, body))
                                 .setFooter(guild.getName(), guild.getIconUrl());
 
-                        channel.sendMessage(user.getAsMention()).addEmbeds(ticketEmbed.build())
+                        // Pingujemy twórcę zgłoszenia i od razu rangę Support w jednej wiadomości
+                        var pings = user.getAsMention() + " <@&" + SUPPORT_ROLE_ID + ">";
+
+                        channel.sendMessage(pings).addEmbeds(ticketEmbed.build())
                                 .addActionRow(
                                         Button.danger("off", "❌ Zamknij Ticket"),
-                                        Button.link(Constants.link, "🌐 Strona WWW")
+                                        Button.link(Constants.LINK, "🌐 Strona WWW")
                                 ).queue();
 
-                        var supportRole = guild.getRoleById(SUPPORT_ROLE_ID);
-                        if (supportRole != null) {
-                            channel.sendMessage(supportRole.getAsMention() + " **Nowe zgłoszenie!**").queue();
-                        }
-
+                        // Powiadomienie gracza, że się udało
                         hook.editOriginalEmbeds(new EmbedBuilder()
                                 .setColor(Color.GREEN)
                                 .setTitle("✅ Zgłoszenie utworzone!")
-                                .setDescription("Twoje zgłoszenie znajduje się tutaj: " + channel.getAsMention())
+                                .setDescription("Twój ticket został pomyślnie otwarty tutaj: " + channel.getAsMention())
                                 .build()
-                        ).setActionRow(Button.link("https://discord.com/channels/%s/%s".formatted(guild.getId(), channel.getId()), "📂 Przejdź do kanału")).queue();
-                    });
+                        ).setActionRow(Button.link("https://discord.com/channels/%s/%s".formatted(guild.getId(), channel.getId()), "📂 Przejdź do zgłoszenia")).queue();
+                    }, error -> hook.editOriginal("> `❌` Wystąpił błąd podczas tworzenia kanału: " + error.getMessage()).queue());
         });
     }
 }

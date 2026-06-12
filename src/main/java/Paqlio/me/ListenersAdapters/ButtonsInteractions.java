@@ -10,6 +10,7 @@ import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import net.dv8tion.jda.api.utils.FileUpload;
+import org.bukkit.Bukkit;
 import org.jetbrains.annotations.NotNull;
 
 import java.awt.Color;
@@ -20,24 +21,16 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ButtonsInteractions extends ListenerAdapter {
-    private final BOT plugin;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
             .withZone(ZoneId.of("Europe/Warsaw"));
 
-    public ButtonsInteractions(BOT plugin) {
-        this.plugin = plugin;
-    }
-
-    public ScheduledExecutorService getScheduler() {
-        return scheduler;
-    }
+    // Pobieramy ID z configu (najlepiej dodaj "bot.log-channel: '1388505635251028070'" do config.yml)
+    // Jeśli nie znajdzie, użyje Twojego domyślnego.
+    private final String logChannelId = BOT.getInstance().getConfig().getString("bot.log-channel", "1388505635251028070");
 
     @Override
     public void onButtonInteraction(@NotNull ButtonInteractionEvent event) {
@@ -46,19 +39,33 @@ public class ButtonsInteractions extends ListenerAdapter {
 
         switch (event.getComponentId()) {
             case "off" -> {
-                var embed = createEmbed("`📨`〢TICKET",
-                        "`⚠️` Czy na pewno chcesz usunąć ticket?\nPo usunięciu nie będzie możliwości jego odzyskania.")
+                var eb = new EmbedBuilder()
+                        .setTitle("`📨`〢 TICKET")
+                        .setDescription("""
+                                `⚠️` **Czy na pewno chcesz usunąć ticket?**
+                                Po usunięciu nie będzie możliwości jego odzyskania.
+                                """)
+                        .setAuthor("StrideMC - Ticket System", Constants.LINK, guild.getIconUrl())
                         .setColor(Color.RED)
-                        .setFooter(guild.getName(), guild.getIconUrl())
-                        .build();
-                event.replyEmbeds(embed)
+                        .setFooter(guild.getName(), guild.getIconUrl());
+
+                event.replyEmbeds(eb.build())
                         .addActionRow(Button.danger("off1", "⚠️ | Usuń Ticket"))
                         .queue();
             }
+
             case "off1" -> {
-                event.replyEmbeds(createEmbed("`📨`〢TICKET", "Ticket zostanie usunięty za `⌚` **5** sekund!").build())
-                        .queue(hook -> hook.retrieveOriginal().queue(msg ->
-                                startCountdown(msg, (TextChannel) event.getChannel(), event.getUser())
+                var deleter = event.getUser();
+                var channel = (TextChannel) event.getChannel();
+
+                // Odpowiadamy od razu i wyłapujemy wiadomość do edycji
+                event.replyEmbeds(new EmbedBuilder()
+                                .setTitle("`📨`〢 TICKET")
+                                .setDescription("Ticket zostanie usunięty za `⌚` **5** sekund!")
+                                .setColor(Constants.DEFAULT_COLOR)
+                                .build())
+                        .queue(hook -> hook.retrieveOriginal().queue(message ->
+                                startCountdown(message, channel, deleter)
                         ));
             }
         }
@@ -67,90 +74,98 @@ public class ButtonsInteractions extends ListenerAdapter {
     private void startCountdown(Message message, TextChannel channel, User deleter) {
         var secondsLeft = new AtomicInteger(5);
 
-        var future = scheduler.scheduleAtFixedRate(() -> {
-            int current = secondsLeft.getAndDecrement();
-            if (current > 0) {
-                var embed = createEmbed("`📨`〢TICKET", "Ticket zostanie usunięty za `⌚` **" + current + "** sekund!").build();
-                message.editMessageEmbeds(embed).queue(null, throwable -> {});
-            } else {
-                archiveAndDelete(channel, deleter);
-                throw new RuntimeException("Stop Task");
-            }
-        }, 0, 1, TimeUnit.SECONDS);
+        // Używamy Asynchronicznego Schedulera Bukkita - idealnie współgra z Minecraftem!
+        Bukkit.getScheduler().runTaskTimerAsynchronously(BOT.getInstance(), task -> {
+            int current = secondsLeft.decrementAndGet();
 
-        scheduler.schedule(() -> future.cancel(false), 7, TimeUnit.SECONDS);
+            if (current > 0) {
+                // Aktualizowanie wiadomości
+                var eb = new EmbedBuilder()
+                        .setTitle("`📨`〢 TICKET")
+                        .setDescription("Ticket zostanie usunięty za `⌚` **" + current + "** sekund!")
+                        .setColor(Constants.DEFAULT_COLOR)
+                        .setThumbnail(message.getGuild().getIconUrl())
+                        .build();
+
+                message.editMessageEmbeds(eb).queue(null, err -> {});
+            } else {
+                // Gdy stoper dobije do 0, anulujemy taska w bezpieczny sposób i archiwizujemy
+                task.cancel();
+                archiveAndDelete(channel, deleter);
+            }
+        }, 20L, 20L); // 20 ticków = 1 sekunda opóźnienia, co 1 sekundę
     }
 
     private void archiveAndDelete(TextChannel channel, User deleter) {
         channel.getHistory().retrievePast(100).queue(messages -> {
             Collections.reverse(messages);
             var info = extractTicketInfo(messages);
-            var logFile = generateLogFile(channel, deleter, messages);
 
-            if (logFile != null) {
-                sendLogAndClose(channel, logFile, deleter, info, messages.size());
-            } else {
+            try {
+                // Generowanie pliku tymczasowego
+                var logFile = File.createTempFile("ticket-archive-", ".txt");
+
+                // Usunięcie pliku w momencie wyłączenia maszyny (Gdyby coś zacięło się po drodze)
+                logFile.deleteOnExit();
+
+                var content = new StringBuilder();
+                content.append("ARCHIWUM TICKETU: ").append(channel.getName()).append("\n")
+                        .append("ZAMKNIĘTY PRZEZ: ").append(deleter.getName()).append(" (ID: ").append(deleter.getId()).append(")\n")
+                        .append("-".repeat(50)).append("\n\n");
+
+                for (var msg : messages) {
+                    var time = formatter.format(msg.getTimeCreated());
+                    content.append(String.format("[%s] %s: %s\n", time, msg.getAuthor().getName(), msg.getContentDisplay()));
+                }
+
+                Files.writeString(logFile.toPath(), content.toString());
+
+                // Wysyłanie logów na kanał
+                sendLogToChannel(channel, logFile, deleter, info, messages.size());
+
+            } catch (IOException e) {
+                BOT.getInstance().getLogger().warning("Nie udało się stworzyć archiwum dla: " + channel.getName());
                 channel.delete().queue();
             }
-        });
+        }, error -> channel.delete().queue());
     }
 
-    private File generateLogFile(TextChannel channel, User deleter, List<Message> messages) {
-        try {
-            var tempFile = File.createTempFile("ticket-log-", ".txt");
-            var content = new StringBuilder();
-            content.append("==================================================\n")
-                    .append("TRANSKRYPCJA TICKETU: ").append(channel.getName()).append("\n")
-                    .append("ZAMKNIĘTY PRZEZ: ").append(deleter.getName()).append(" (").append(deleter.getId()).append(")\n")
-                    .append("==================================================\n\n");
-
-            for (var m : messages) {
-                var time = formatter.format(m.getTimeCreated());
-                content.append(String.format("[%s] %s: %s\n", time, m.getAuthor().getName(), m.getContentDisplay()));
-            }
-
-            Files.writeString(tempFile.toPath(), content.toString());
-            return tempFile;
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    private void sendLogAndClose(TextChannel channel, File file, User deleter, TicketInfo info, int msgCount) {
-        // Pobieranie ID z configu
-        var logChannelId = plugin.getConfig().getLong("channels.logs");
-        var logChannel = channel.getGuild().getTextChannelById(logChannelId);
+    private void sendLogToChannel(TextChannel ticketChannel, File logFile, User deleter, TicketInfo info, int msgCount) {
+        var logChannel = ticketChannel.getGuild().getTextChannelById(logChannelId);
 
         if (logChannel == null) {
-            channel.delete().queue();
-            file.delete();
+            BOT.getInstance().getLogger().warning("Nie znaleziono kanału logów o ID: " + logChannelId);
+            ticketChannel.delete().queue();
+            logFile.delete();
             return;
         }
 
-        try (var is = Files.newInputStream(file.toPath())) {
-            var embed = new EmbedBuilder()
-                    .setTitle("`📝` | Ticket Zamknięty")
-                    .setColor(Constants.defaultcolor)
-                    .addField("> `\uD83D\uDD90` Ticket:", "```" + channel.getName() + "```", false)
-                    .addField("> `🗑️` Zamknięte przez:", deleter.getAsMention(), false)
-                    .addField("> `💬` Liczba wiadomości:", "```" + msgCount + "```", true)
-                    .setThumbnail(channel.getGuild().getIconUrl())
-                    .setFooter(channel.getGuild().getName(), channel.getGuild().getIconUrl());
+        var eb = new EmbedBuilder()
+                .setTitle("`📑`〢 Ticket Zarchiwizowany")
+                .setColor(Constants.DEFAULT_COLOR)
+                .setThumbnail(ticketChannel.getGuild().getIconUrl())
+                .addField("> `📩` Kanał:", "```" + ticketChannel.getName() + "```", true)
+                .addField("> `💬` Wiadomości:", "```" + msgCount + "```", true)
+                .addField("> `🗑️` Zamknął(a):", deleter.getAsMention(), false);
 
-            if (info.temat() != null) embed.addField("> `📋` Temat:", "```" + info.temat() + "```", false);
+        if (info.temat() != null) {
+            eb.addField("> `📋` Temat / Powód:", "```" + info.temat() + "```", false);
+        }
 
-            logChannel.sendMessageEmbeds(embed.build())
-                    .addFiles(FileUpload.fromData(is, "transcript-" + channel.getName() + ".txt"))
-                    .queue(success -> {
-                        channel.delete().queue();
-                        file.delete();
-                    }, error -> {
-                        channel.delete().queue();
-                        file.delete();
-                    });
-        } catch (IOException e) {
-            channel.delete().queue();
+        eb.setFooter("ID Kanału: " + ticketChannel.getId()).setTimestamp(java.time.Instant.now());
+
+        // Kluczowe: Najpierw wysyłamy logi, potem usuwamy kanał (dodałem czyszczenie pliku w finally!)
+        logChannel.sendMessageEmbeds(eb.build())
+                .addFiles(FileUpload.fromData(logFile, "transcript-" + ticketChannel.getName() + ".txt"))
+                .queue(
+                        success -> finishDeletion(ticketChannel, logFile),
+                        error -> finishDeletion(ticketChannel, logFile)
+                );
+    }
+
+    private void finishDeletion(TextChannel channel, File file) {
+        channel.delete().queue(null, err -> {});
+        if (file.exists()) {
             file.delete();
         }
     }
@@ -164,27 +179,17 @@ public class ButtonsInteractions extends ListenerAdapter {
                 }
             }
         }
-        return new TicketInfo(null, null);
+        return new TicketInfo("Brak danych", "Brak danych");
     }
 
     private String parseField(String input, String field) {
         try {
             if (!input.contains(field)) return null;
-            var part = input.split(field)[1];
-            return part.split("```")[1].trim();
+            return input.split(field)[1].split("```")[1].trim();
         } catch (Exception e) {
             return null;
         }
     }
 
-    private EmbedBuilder createEmbed(String title, String description) {
-        return new EmbedBuilder()
-                .setTitle(title)
-                .setDescription(description)
-                .setColor(Constants.defaultcolor)
-                .setAuthor("StrideMC - Ticket System", Constants.link);
-    }
-
-    // Rekord Javy 17 - czysty kontener na dane
     private record TicketInfo(String temat, String tresc) {}
 }

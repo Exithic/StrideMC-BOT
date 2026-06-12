@@ -1,0 +1,10 @@
+bot:
+  token: "MTMzNTAwMDQ3NTIyODk2NjkxNg.GoqOA9.sP8uIJnfgXXWhWFoulYhZWwMlhxC2KnnxWFqS4"
+  status: "❤️ STRIDEMC"
+
+discord:
+  channels:
+    minecraft: "1384253969127178301"
+    console: "1495553473176014950"
+    ban: "1512029556817662102"
+    report: "1512029556817662102"

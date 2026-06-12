@@ -4,15 +4,15 @@ import Paqlio.me.BOT;
 import Paqlio.me.Configurations.Constants;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.Permission;
-import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.jetbrains.annotations.NotNull;
 
 import java.time.OffsetDateTime;
-import java.util.concurrent.TimeUnit;
 
 public class Clear extends ListenerAdapter {
+
+    private final String logChannelId = BOT.getInstance().getConfig().getString("bot.log-channel", "1388505635251028070");
 
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
@@ -20,9 +20,10 @@ public class Clear extends ListenerAdapter {
 
         var guild = event.getGuild();
         var member = event.getMember();
-        var channel = event.getGuildChannel();
+        var messageChannel = event.getChannel(); // Do pobierania historii
+        var guildChannel = event.getGuildChannel(); // Do usuwania (wymaga kanału serwerowego)
 
-        if (guild == null || member == null) return;
+        if (guild == null || member == null || guildChannel == null) return;
 
         // 1. Wstępna weryfikacja uprawnień
         if (!member.hasPermission(Permission.MESSAGE_MANAGE)) {
@@ -30,13 +31,16 @@ public class Clear extends ListenerAdapter {
             return;
         }
 
-        if (!guild.getSelfMember().hasPermission(channel, Permission.MESSAGE_MANAGE)) {
+        if (!guild.getSelfMember().hasPermission(guildChannel, Permission.MESSAGE_MANAGE)) {
             event.reply("> `❌` Bot nie posiada uprawnień `MESSAGE_MANAGE` na tym kanale!").setEphemeral(true).queue();
             return;
         }
 
         var amountOption = event.getOption("ilość");
-        if (amountOption == null) return;
+        if (amountOption == null) {
+            event.reply("> `⚠️` Musisz podać ilość wiadomości do usunięcia!").setEphemeral(true).queue();
+            return;
+        }
 
         int amount = amountOption.getAsInt();
         if (amount < 1 || amount > 100) {
@@ -44,52 +48,65 @@ public class Clear extends ListenerAdapter {
             return;
         }
 
-        // Odpowiadamy efemerycznie, aby nie śmiecić na czacie
+        // Odpowiadamy efemerycznie (niewidoczne dla innych)
         event.deferReply(true).queue();
 
-        event.getChannel().getHistory().retrievePast(amount).queue(messages -> {
+        messageChannel.getHistory().retrievePast(amount).queue(messages -> {
             var twoWeeksAgo = OffsetDateTime.now().minusDays(14);
 
-            // Filtrowanie wiadomości (Discord nie pozwala usuwać grupowo starszych niż 14 dni)
+            // Filtrowanie wiadomości
             var deletableMessages = messages.stream()
                     .filter(m -> m.getTimeCreated().isAfter(twoWeeksAgo))
                     .toList();
 
             if (deletableMessages.isEmpty()) {
-                event.getHook().sendMessage("> `❌` Nie znaleziono wiadomości młodszych niż 14 dni.").queue();
+                event.getHook().sendMessage("> `⚠️` Nie znaleziono wiadomości młodszych niż 14 dni.").queue();
                 return;
             }
 
-            // 2. Usuwanie wiadomości
-            channel.deleteMessages(deletableMessages).queue(success -> {
-                var deletedCount = deletableMessages.size();
+            // 2. Bezpieczne usuwanie wiadomości
+            if (deletableMessages.size() == 1) {
+                deletableMessages.get(0).delete().queue(
+                        success -> handleSuccess(event, 1),
+                        error -> handleError(event, error)
+                );
+            } else {
+                // TUTAJ JEST POPRAWKA: Używamy guildChannel zamiast ogólnego messageChannel
+                guildChannel.deleteMessages(deletableMessages).queue(
+                        success -> handleSuccess(event, deletableMessages.size()),
+                        error -> handleError(event, error)
+                );
+            }
 
-                // Informacja dla użytkownika
-                event.getHook().sendMessage("`✅` Pomyślnie usunięto **" + deletedCount + "** wiadomości.")
-                        .delay(5, TimeUnit.SECONDS)
-                        .flatMap(m -> m.delete()) // Automatyczne usuwanie potwierdzenia
-                        .queue();
+        }, error -> event.getHook().sendMessage("> `❌` Błąd podczas pobierania historii kanału: " + error.getMessage()).queue());
+    }
 
-                // 3. Logowanie do kanału logów (opcjonalne, ale bardzo przydatne)
-                sendLog(event, deletedCount);
+    // --- METODY POMOCNICZE ---
 
-            }, error -> event.getHook().sendMessage("> `❌` Błąd podczas usuwania: " + error.getMessage()).queue());
-        });
+    private void handleSuccess(SlashCommandInteractionEvent event, int count) {
+        event.getHook().sendMessage("`✅` Pomyślnie usunięto **" + count + "** wiadomości.").queue();
+        sendLog(event, count);
+    }
+
+    private void handleError(SlashCommandInteractionEvent event, Throwable error) {
+        event.getHook().sendMessage("> `❌` Błąd API podczas usuwania: " + error.getMessage()).queue();
     }
 
     private void sendLog(SlashCommandInteractionEvent event, int count) {
-        // Pobieramy kanał logów z Twoich stałych (ID z ticketów)
-        var logChannel = event.getGuild().getTextChannelById("1388505635251028070");
+        var guild = event.getGuild();
+        if (guild == null) return;
+
+        var logChannel = guild.getTextChannelById(logChannelId);
         if (logChannel == null) return;
 
         var logEmbed = new EmbedBuilder()
                 .setTitle("`🧹`〢 Czyszczenie czatu")
-                .setColor(Constants.defaultcolor)
-                .addField("> Wykonawca:", event.getUser().getAsMention(), true)
-                .addField("> Kanał:", event.getGuildChannel().getAsMention(), true)
-                .addField("> Ilość:", "```" + count + " wiadomości```", false)
+                .setColor(Constants.DEFAULT_COLOR)
+                .addField("> `👤` Wykonawca:", event.getUser().getAsMention(), true)
+                .addField("> `💬` Kanał:", event.getChannel().getAsMention(), true)
+                .addField("> `🗑️` Ilość usuniętych:", "```" + count + " wiadomości```", false)
                 .setTimestamp(OffsetDateTime.now())
-                .setFooter(event.getGuild().getName(), event.getGuild().getIconUrl());
+                .setFooter(guild.getName(), guild.getIconUrl());
 
         logChannel.sendMessageEmbeds(logEmbed.build()).queue();
     }

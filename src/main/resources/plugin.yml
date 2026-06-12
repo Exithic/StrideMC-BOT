@@ -3,4 +3,8 @@ version: '1.0-SNAPSHOT'
 main: Paqlio.me.BOT
 api-version: '1.21'
 load: STARTUP
-authors: [ Paqlio ]
+authors: [ Exithic™️ ]
+commands:
+  dclink:
+    description: Generuje kod do polaczenia z Discordem
+    aliases: [polacz]
